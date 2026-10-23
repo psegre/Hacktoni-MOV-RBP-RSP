@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 // KIWI-EXAMPLE
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 
@@ -27,12 +29,13 @@
 #include "esp_crc.h"
 #include "espnow_example.h"
 
-#define ESPNOW_MAXDELAY 512 //-> tiempo de respuesta espnow
+#define ESPNOW_MAXDELAY 512 //-> tiempo de respuesta network
 
 static const char *TAG = "demo-BOMBA"; //-> nombre del proj?
 
 //ESP-NOW check antena
 
+static QueueHandle_t s_example_espnow_queue;
 static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
@@ -157,23 +160,6 @@ void example_espnow_data_prepare(example_espnow_send_param_t *send_param)
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
-/* Prepare ESPNOW data to be sent. */
-void example_espnow_data_prepare(example_espnow_send_param_t *send_param)
-{
-    example_espnow_data_t *buf = (example_espnow_data_t *)send_param->buffer;
-
-    assert(send_param->len >= sizeof(example_espnow_data_t));
-
-    buf->type = IS_BROADCAST_ADDR(send_param->dest_mac) ? EXAMPLE_ESPNOW_DATA_BROADCAST : EXAMPLE_ESPNOW_DATA_UNICAST;
-    buf->state = send_param->state;
-    buf->seq_num = s_example_espnow_seq[buf->type]++;
-    buf->crc = 0;
-    buf->magic = send_param->magic;
-    /* Fill all remaining bytes after the data with random values */
-    esp_fill_random(buf->payload, send_param->len - sizeof(example_espnow_data_t));
-    buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
-}
-
 static void example_espnow_task(void *pvParameter)
 {
     example_espnow_event_t evt;
@@ -181,11 +167,12 @@ static void example_espnow_task(void *pvParameter)
     uint16_t recv_seq = 0;
     uint32_t recv_magic = 0;
     bool is_broadcast = false;
+    bool send_pending = false;
+    bool send_requested = false;
     int ret;
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
-boot
     /* Start sending broadcast ESPNOW data. 
     * el primer bot falla en mandar
     * el segundo bot deberia poder lograr la conexion y confirmar el canal
@@ -196,6 +183,7 @@ boot
         example_espnow_deinit(send_param);
         vTaskDelete(NULL);
     }
+    send_pending = true;
 
     while (xQueueReceive(s_example_espnow_queue, &evt, portMAX_DELAY) == pdTRUE) {
         switch (evt.id) {
@@ -203,39 +191,54 @@ boot
             {
                 example_espnow_event_send_cb_t *send_cb = &evt.info.send_cb;
                 is_broadcast = IS_BROADCAST_ADDR(send_cb->mac_addr);
+                send_pending = false;
 
                 ESP_LOGD(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
 
                 if (is_broadcast && (send_param->broadcast == false)) {
-                    break;
+                    if (!send_requested) {
+                        break;
+                    }
+                } else {
+                    if (!is_broadcast) {
+                        send_param->count--;
+                        if (send_param->count == 0) {
+                            ESP_LOGI(TAG, "Send done");
+                            example_espnow_deinit(send_param);
+                            vTaskDelete(NULL);
+                        }
+                    }
+
+                    memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
                 }
 
-                if (!is_broadcast) {
-                    send_param->count--;
-                    if (send_param->count == 0) {
-                        ESP_LOGI(TAG, "Send done");
+                if (send_requested) {
+                    send_requested = false;
+                    example_espnow_data_prepare(send_param);
+                    if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
+                        ESP_LOGE(TAG, "Send error");
                         example_espnow_deinit(send_param);
                         vTaskDelete(NULL);
                     }
+                    send_pending = true;
+                }
+                break;
+            }
+            case EXAMPLE_ESPNOW_SEND_REQUEST:
+            {
+                if (send_pending) {
+                    send_requested = true;
+                    ESP_LOGI(TAG, "Send request queued until current send completes");
+                    break;
                 }
 
-                /* Delay a while before sending the next data. */
-                if (send_param->delay > 0) {
-                    vTaskDelay(send_param->delay/portTICK_PERIOD_MS);
-                }
-
-                ESP_LOGI(TAG, "send data to "MACSTR"", MAC2STR(send_cb->mac_addr));
-
-                memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
                 example_espnow_data_prepare(send_param);
-
-                /* Send the next data after the previous data is sent. */
-                /* ESTAS LINEAS HACE QUE SIEMPRE MANDE MENSAJE NUEVO
                 if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
                     ESP_LOGE(TAG, "Send error");
                     example_espnow_deinit(send_param);
                     vTaskDelete(NULL);
-                } */
+                }
+                send_pending = true;
                 break;
             }
             case EXAMPLE_ESPNOW_RECV_CB:
@@ -294,6 +297,7 @@ boot
                             else {
                                 send_param->broadcast = false;
                                 send_param->unicast = true;
+                                send_pending = true;
                             }
                         }
                     }
@@ -405,7 +409,6 @@ static const int s_button_freq[BTN_COUNT] = {
     [BTN_DOWN] = 440,
     [BTN_LEFT] = 494,
     [BTN_RIGHT] = 587,
-    [BTN_CENTER] = 784,
     [BTN_KEY1] = 262,
     [BTN_KEY2] = 330,
     [BTN_KEY3] = 392,
@@ -441,7 +444,6 @@ static void draw_ui(uint32_t pressed, int mic_level, bool audio_ok)
 
     draw_key(15, 28, 10, pressed & (1u << BTN_UP));
     draw_key(4, 39, 10, pressed & (1u << BTN_LEFT));
-    draw_key(15, 39, 10, pressed & (1u << BTN_CENTER));
     draw_key(26, 39, 10, pressed & (1u << BTN_RIGHT));
     draw_key(15, 50, 10, pressed & (1u << BTN_DOWN));
 
@@ -467,7 +469,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK( ret );
 
-    example_wifi_init();
+    wifi_init_from_espnow();
     example_espnow_init();
 
     bool display_ok = display_init() == ESP_OK;
@@ -503,6 +505,15 @@ void app_main(void)
         button_event_t ev;
         if (xQueueReceive(events, &ev, pdMS_TO_TICKS(UI_PERIOD_MS)) == pdTRUE) {
             ESP_LOGI(TAG, "button %s %s", buttons_name(ev.id), ev.pressed ? "pressed" : "released");
+            if (ev.pressed && ev.id == BTN_KEY1) {
+                const example_espnow_event_t send_request = {
+                    .id = EXAMPLE_ESPNOW_SEND_REQUEST,
+                };
+                if (s_example_espnow_queue == NULL ||
+                    xQueueSend(s_example_espnow_queue, &send_request, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "Could not queue ESP-NOW send request");
+                }
+            }
             if (ev.pressed && audio_ok) {
                 audio_play_tone(s_button_freq[ev.id], 100);
             }

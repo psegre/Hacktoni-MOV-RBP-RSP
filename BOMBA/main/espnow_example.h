@@ -7,8 +7,8 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
-#ifndef ESPNOW_EXAMPLE_H
-#define ESPNOW_EXAMPLE_H
+#ifndef NETWORK_H
+#define NETWORK_H
 
 /* ESPNOW can work in both station and softap mode. It is configured in menuconfig. */
 #if CONFIG_ESPNOW_WIFI_MODE_STATION
@@ -26,6 +26,7 @@
 typedef enum {
     EXAMPLE_ESPNOW_SEND_CB,
     EXAMPLE_ESPNOW_RECV_CB,
+    EXAMPLE_ESPNOW_SEND_REQUEST,
 } example_espnow_event_id_t;
 
 typedef struct {
@@ -44,7 +45,7 @@ typedef union {
     example_espnow_event_recv_cb_t recv_cb;
 } example_espnow_event_info_t;
 
-/* When ESPNOW sending or receiving callback function is called, post event to ESPNOW task. */
+/* Callback events and app send requests are handled by the ESP-NOW task. */
 typedef struct {
     example_espnow_event_id_t id;
     example_espnow_event_info_t info;

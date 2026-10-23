@@ -15,3 +15,85 @@ menu "Hackathon board demo"
             Enable if the text on the OLED appears upside down.
 
 endmenu
+
+menu "ESP-NOW Example Configuration"
+
+    choice ESPNOW_WIFI_MODE
+        prompt "WiFi mode"
+        default ESPNOW_WIFI_MODE_STATION
+        help
+            WiFi mode (station or softAP).
+
+        config ESPNOW_WIFI_MODE_STATION
+            bool "Station"
+        config ESPNOW_WIFI_MODE_STATION_SOFTAP
+            bool "SoftAP"
+    endchoice
+
+    config ESPNOW_PMK
+        string "ESP-NOW primary master key"
+        default "pmk1234567890123"
+        help
+            Primary master key; must be 16 bytes.
+
+    config ESPNOW_LMK
+        string "ESP-NOW local master key"
+        default "lmk1234567890123"
+        help
+            Local master key; must be 16 bytes.
+
+    config ESPNOW_CHANNEL
+        int "Channel"
+        default 1
+        range 0 14
+        help
+            Channel used for ESP-NOW communication.
+
+    config ESPNOW_SEND_COUNT
+        int "Send count"
+        default 100
+        range 1 65535
+        help
+            Number of unicast ESP-NOW messages to send.
+
+    config ESPNOW_SEND_DELAY
+        int "Send delay"
+        default 1000
+        range 0 65535
+        help
+            Delay between ESP-NOW messages, in milliseconds.
+
+    config ESPNOW_SEND_LEN
+        int "Send length"
+        default 10
+        range 10 1470
+        help
+            ESP-NOW packet length, in bytes.
+
+    config ESPNOW_ENABLE_LONG_RANGE
+        bool "Enable long range"
+        default n
+        help
+            Enable the ESP-NOW long-range PHY mode.
+
+    config ESPNOW_ENABLE_POWER_SAVE
+        bool "Enable ESP-NOW power save"
+        default n
+        select ESP_WIFI_STA_DISCONNECTED_PM_ENABLE
+        depends on ESPNOW_WIFI_MODE_STATION
+        help
+            Enable periodic wake and sleep for ESP-NOW in station mode.
+
+    config ESPNOW_WAKE_WINDOW
+        int "ESP-NOW wake window (ms)"
+        range 0 65535
+        default 50
+        depends on ESPNOW_ENABLE_POWER_SAVE
+
+    config ESPNOW_WAKE_INTERVAL
+        int "ESP-NOW wake interval (ms)"
+        range 1 65535
+        default 100
+        depends on ESPNOW_ENABLE_POWER_SAVE
+
+endmenu
