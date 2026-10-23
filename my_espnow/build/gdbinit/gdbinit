@@ -1,0 +1,2 @@
+source /home/psegre/Hacktoni/projects/my_espnow/build/gdbinit/symbols
+source /home/psegre/Hacktoni/projects/my_espnow/build/gdbinit/connect
