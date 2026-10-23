@@ -20,6 +20,7 @@
 #endif
 
 #define ESPNOW_QUEUE_SIZE           6
+#define ESPNOW_MESSAGE              "BOMB"
 
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, s_example_broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
@@ -27,6 +28,7 @@ typedef enum {
     EXAMPLE_ESPNOW_SEND_CB,
     EXAMPLE_ESPNOW_RECV_CB,
     EXAMPLE_ESPNOW_SEND_REQUEST,
+    EXAMPLE_ESPNOW_GAME_OVER,
 } example_espnow_event_id_t;
 
 typedef struct {
@@ -36,7 +38,7 @@ typedef struct {
 
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
-    uint8_t *data;
+    uint8_t data[ESP_NOW_MAX_DATA_LEN];
     int data_len;
 } example_espnow_event_recv_cb_t;
 

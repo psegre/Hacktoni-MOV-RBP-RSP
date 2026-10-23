@@ -49,6 +49,14 @@ menu "ESP-NOW Example Configuration"
         help
             Channel used for ESP-NOW communication.
 
+    config ESPNOW_MAC_WHITELIST
+        string "Allowed ESP-NOW source MAC addresses"
+        default "80:45:6b:36:30:14,80:45:6b:36:2f:e8"
+        help
+            Comma-separated list of allowed source MAC addresses in
+            AA:BB:CC:DD:EE:FF format. The default addresses are examples;
+            replace them with the MAC addresses of the peer devices.
+
     config ESPNOW_SEND_COUNT
         int "Send count"
         default 100
@@ -65,10 +73,11 @@ menu "ESP-NOW Example Configuration"
 
     config ESPNOW_SEND_LEN
         int "Send length"
-        default 10
-        range 10 1470
+        default 15
+        range 15 1470
         help
-            ESP-NOW packet length, in bytes.
+            ESP-NOW packet length, in bytes. Must fit the protocol header and
+            the "BOMB" button message.
 
     config ESPNOW_ENABLE_LONG_RANGE
         bool "Enable long range"
