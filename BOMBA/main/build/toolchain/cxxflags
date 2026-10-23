@@ -1,0 +1,8 @@
+-Wno-frame-address
+-mlongcalls
+-fno-builtin-memcpy
+-fno-builtin-memset
+-fno-builtin-bzero
+"-specs=/home/psegre/Hacktoni/projects/BOMBA/main/build/specs/picolibc.specs"
+-D__PICOLIBC_ERRNO_FUNCTION=__errno
+-fno-rtti

@@ -1,0 +1,2 @@
+source /home/psegre/Hacktoni/projects/BOMBA/main/build/gdbinit/symbols
+source /home/psegre/Hacktoni/projects/BOMBA/main/build/gdbinit/connect
