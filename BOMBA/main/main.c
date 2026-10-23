@@ -185,8 +185,11 @@ static void example_espnow_task(void *pvParameter)
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
     ESP_LOGI(TAG, "Start sending broadcast data");
-
-    /* Start sending broadcast ESPNOW data. */
+boot
+    /* Start sending broadcast ESPNOW data. 
+    * el primer bot falla en mandar
+    * el segundo bot deberia poder lograr la conexion y confirmar el canal
+    */
     example_espnow_send_param_t *send_param = (example_espnow_send_param_t *)pvParameter;
     if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
         ESP_LOGE(TAG, "Send error");
@@ -227,11 +230,12 @@ static void example_espnow_task(void *pvParameter)
                 example_espnow_data_prepare(send_param);
 
                 /* Send the next data after the previous data is sent. */
+                /* ESTAS LINEAS HACE QUE SIEMPRE MANDE MENSAJE NUEVO
                 if (esp_now_send(send_param->dest_mac, send_param->buffer, send_param->len) != ESP_OK) {
                     ESP_LOGE(TAG, "Send error");
                     example_espnow_deinit(send_param);
                     vTaskDelete(NULL);
-                }
+                } */
                 break;
             }
             case EXAMPLE_ESPNOW_RECV_CB:
