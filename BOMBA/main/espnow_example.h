@@ -35,11 +35,14 @@ typedef struct {
     uint8_t type;
     uint8_t joystick;
     uint8_t key;
+    uint8_t message_length;
+    char message[4];
 } example_espnow_challenge_t;
 
 enum {
     EXAMPLE_ESPNOW_ITEM_CHALLENGE,
     EXAMPLE_ESPNOW_ITEM_MINE,
+    EXAMPLE_ESPNOW_ITEM_MESSAGE,
 };
 
 typedef struct {

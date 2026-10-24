@@ -73,11 +73,11 @@ menu "ESP-NOW Example Configuration"
 
     config ESPNOW_SEND_LEN
         int "Send length"
-        default 15
-        range 15 1470
+        default 17
+        range 17 1470
         help
             ESP-NOW packet length, in bytes. Must fit the protocol header and
-            the "BOMB" button message.
+            the largest game item payload.
 
     config ESPNOW_ENABLE_LONG_RANGE
         bool "Enable long range"
