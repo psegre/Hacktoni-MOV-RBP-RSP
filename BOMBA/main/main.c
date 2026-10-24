@@ -567,6 +567,14 @@ static void draw_dead_screen(void)
     display_flush();
 }
 
+static void draw_bomb_difuse(void)
+{
+    display_clear();
+    display_draw_rect(3, 3, 122, 58);
+    display_text(28, 28, "BOMB DEFUSED", true);
+    display_flush();
+}
+
 static void draw_ui(uint32_t pressed, int mic_level, bool audio_ok)
 {
     char line[24];
@@ -656,9 +664,12 @@ void app_main(void)
             if (ev.pressed && board_dead) {
                 ESP_LOGI(TAG, "Ignoring button press: board is dead");
             } else if (ev.pressed && (bomb_countdown >= 0 || bomb_countdown == -2)) {
-                bomb_countdown = -1;
-                next_bomb_update = 0;
+                bomb_countdown = -3;
+                next_bomb_update = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
                 xQueueReset(s_bomb_display_queue);
+                if (display_ok) {
+                    draw_bomb_difuse();
+                }
                 ESP_LOGI(TAG, "Bomb defused by %s", buttons_name(ev.id));
             } else if (ev.pressed && buttons_name(ev.id)) {
                 const example_espnow_event_t send_request = {
@@ -683,6 +694,9 @@ void app_main(void)
         int mic_level = audio_ok ? audio_mic_level() : 0;
         if (display_ok) {
             const TickType_t now = xTaskGetTickCount();
+            if (bomb_countdown == -3 && (int32_t)(now - next_bomb_update) >= 0) {
+                bomb_countdown = -1;
+            }
             if (bomb_countdown >= 0 && (int32_t)(now - next_bomb_update) >= 0) {
                 draw_bomb_screen(bomb_countdown);
                 bomb_countdown = bomb_countdown == 0 ? -2 : bomb_countdown - 1;
@@ -699,7 +713,7 @@ void app_main(void)
                     xQueueSend(s_example_espnow_queue, &game_over_event, 0) != pdTRUE) {
                     ESP_LOGW(TAG, "Could not queue ESP-NOW game-over event");
                 }
-            } else if (bomb_countdown >= 0) {
+            } else if (bomb_countdown >= 0 || bomb_countdown == -2 || bomb_countdown == -3) {
                 continue;
             } else if (!board_dead) {
                 draw_ui(buttons_read(), mic_level, audio_ok);
