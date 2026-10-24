@@ -43,9 +43,10 @@ static uint8_t s_example_broadcast_mac[ESP_NOW_ETH_ALEN] = { 0xFF, 0xFF, 0xFF, 0
 static uint16_t s_example_espnow_seq[EXAMPLE_ESPNOW_DATA_MAX] = { 0, 0 };
 
 typedef struct {
+    uint8_t type;
     uint8_t joystick;
     uint8_t key;
-} joystick_challenge_t;
+} game_item_t;
 
 enum {
     JOYSTICK_NORTH = 1u << 0,
@@ -54,7 +55,7 @@ enum {
     JOYSTICK_EAST = 1u << 3,
     JOYSTICK_POSITION_MASK = JOYSTICK_NORTH | JOYSTICK_SOUTH | JOYSTICK_WEST | JOYSTICK_EAST,
     CHALLENGE_PAYLOAD_MARKER = 0xC1,
-    CHALLENGE_PAYLOAD_SIZE = 3,
+    CHALLENGE_PAYLOAD_SIZE = 4,
 };
 
 static void example_espnow_deinit(example_espnow_send_param_t *send_param);
@@ -262,17 +263,18 @@ static void example_espnow_data_prepare(example_espnow_send_param_t *send_param,
     buf->crc = esp_crc16_le(UINT16_MAX, (uint8_t const *)buf, send_param->len);
 }
 
-static bool example_espnow_send_challenge(example_espnow_send_param_t *send_param,
-                                          const joystick_challenge_t *challenge)
+static bool example_espnow_send_game_item(example_espnow_send_param_t *send_param,
+                                          const game_item_t *item)
 {
     const uint8_t payload[CHALLENGE_PAYLOAD_SIZE] = {
         CHALLENGE_PAYLOAD_MARKER,
-        challenge->joystick,
-        challenge->key,
+        item->type,
+        item->joystick,
+        item->key,
     };
 
     if ((size_t)send_param->len < sizeof(example_espnow_data_t) + sizeof(payload)) {
-        ESP_LOGE(TAG, "ESPNOW send length is too short for a joystick challenge");
+        ESP_LOGE(TAG, "ESPNOW send length is too short for a game item");
         return false;
     }
 
@@ -294,8 +296,8 @@ static void example_espnow_task(void *pvParameter)
     bool is_broadcast = false;
     bool send_pending = false;
     bool game_over = false;
-    joystick_challenge_t pending_challenges[ESPNOW_QUEUE_SIZE];
-    uint8_t pending_challenge_count = 0;
+    game_item_t pending_items[ESPNOW_QUEUE_SIZE];
+    uint8_t pending_item_count = 0;
     int ret;
 
     vTaskDelay(5000 / portTICK_PERIOD_MS);
@@ -323,26 +325,26 @@ static void example_espnow_task(void *pvParameter)
                 ESP_LOGD(TAG, "Send data to "MACSTR", status1: %d", MAC2STR(send_cb->mac_addr), send_cb->status);
 
                 if (game_over || s_board_dead) {
-                    pending_challenge_count = 0;
+                    pending_item_count = 0;
                     break;
                 }
 
                 if (is_broadcast && (send_param->broadcast == false)) {
-                    if (pending_challenge_count == 0) {
+                    if (pending_item_count == 0) {
                         break;
                     }
                 } else {
                     memcpy(send_param->dest_mac, send_cb->mac_addr, ESP_NOW_ETH_ALEN);
                 }
 
-                if (pending_challenge_count > 0) {
-                    const joystick_challenge_t challenge = pending_challenges[0];
-                    pending_challenge_count--;
-                    if (pending_challenge_count > 0) {
-                        memmove(pending_challenges, &pending_challenges[1],
-                                pending_challenge_count * sizeof(pending_challenges[0]));
+                if (pending_item_count > 0) {
+                    const game_item_t item = pending_items[0];
+                    pending_item_count--;
+                    if (pending_item_count > 0) {
+                        memmove(pending_items, &pending_items[1],
+                                pending_item_count * sizeof(pending_items[0]));
                     }
-                    send_pending = example_espnow_send_challenge(send_param, &challenge);
+                    send_pending = example_espnow_send_game_item(send_param, &item);
                 }
                 break;
             }
@@ -352,29 +354,31 @@ static void example_espnow_task(void *pvParameter)
                     break;
                 }
                 if (send_pending) {
-                    if (pending_challenge_count < ESPNOW_QUEUE_SIZE) {
-                        pending_challenges[pending_challenge_count++] = (joystick_challenge_t) {
+                    if (pending_item_count < ESPNOW_QUEUE_SIZE) {
+                        pending_items[pending_item_count++] = (game_item_t) {
+                            .type = evt.info.challenge.type,
                             .joystick = evt.info.challenge.joystick,
                             .key = evt.info.challenge.key,
                         };
                     } else {
-                        ESP_LOGW(TAG, "Dropping joystick challenge: pending send queue full");
+                        ESP_LOGW(TAG, "Dropping game item: pending send queue full");
                     }
                     break;
                 }
 
-                const joystick_challenge_t challenge = {
+                const game_item_t item = {
+                    .type = evt.info.challenge.type,
                     .joystick = evt.info.challenge.joystick,
                     .key = evt.info.challenge.key,
                 };
-                send_pending = example_espnow_send_challenge(send_param, &challenge);
+                send_pending = example_espnow_send_game_item(send_param, &item);
                 break;
             }
             case EXAMPLE_ESPNOW_GAME_OVER:
             {
                 game_over = true;
                 s_board_dead = true;
-                pending_challenge_count = 0;
+                pending_item_count = 0;
                 ESP_LOGI(TAG, "Board is dead; stopping further ESP-NOW sends");
                 break;
             }
@@ -388,18 +392,22 @@ static void example_espnow_task(void *pvParameter)
                     const size_t payload_len = (size_t)recv_cb->data_len - sizeof(*data);
                     if (payload_len >= CHALLENGE_PAYLOAD_SIZE &&
                         data->payload[0] == CHALLENGE_PAYLOAD_MARKER &&
-                        (data->payload[1] & ~JOYSTICK_POSITION_MASK) == 0 &&
-                        (data->payload[1] & (JOYSTICK_NORTH | JOYSTICK_SOUTH)) !=
-                            (JOYSTICK_NORTH | JOYSTICK_SOUTH) &&
-                        (data->payload[1] & (JOYSTICK_WEST | JOYSTICK_EAST)) !=
-                            (JOYSTICK_WEST | JOYSTICK_EAST) &&
-                        data->payload[2] >= BTN_KEY1 && data->payload[2] <= BTN_KEY4) {
-                        const joystick_challenge_t challenge = {
-                            .joystick = data->payload[1],
-                            .key = data->payload[2],
+                        (data->payload[1] == EXAMPLE_ESPNOW_ITEM_MINE ||
+                         data->payload[1] == EXAMPLE_ESPNOW_ITEM_CHALLENGE) &&
+                        (data->payload[1] == EXAMPLE_ESPNOW_ITEM_MINE ||
+                         ((data->payload[2] & ~JOYSTICK_POSITION_MASK) == 0 &&
+                          (data->payload[2] & (JOYSTICK_NORTH | JOYSTICK_SOUTH)) !=
+                              (JOYSTICK_NORTH | JOYSTICK_SOUTH) &&
+                          (data->payload[2] & (JOYSTICK_WEST | JOYSTICK_EAST)) !=
+                              (JOYSTICK_WEST | JOYSTICK_EAST) &&
+                          data->payload[3] >= BTN_KEY1 && data->payload[3] <= BTN_KEY4))) {
+                        const game_item_t item = {
+                            .type = data->payload[1],
+                            .joystick = data->payload[2],
+                            .key = data->payload[3],
                         };
-                        if (xQueueSend(s_challenge_queue, &challenge, 0) != pdTRUE) {
-                            ESP_LOGW(TAG, "Dropping joystick challenge: receive queue full");
+                        if (xQueueSend(s_challenge_queue, &item, 0) != pdTRUE) {
+                            ESP_LOGW(TAG, "Dropping received game item: receive queue full");
                         }
                     }
                 }
@@ -634,7 +642,7 @@ static const char *joystick_position_name(uint8_t position)
     }
 }
 
-static void draw_challenge_screen(int countdown, const joystick_challenge_t *challenge,
+static void draw_challenge_screen(int countdown, const game_item_t *challenge,
                                   uint8_t current_position)
 {
     char line[24];
@@ -652,6 +660,18 @@ static void draw_challenge_screen(int countdown, const joystick_challenge_t *cha
     display_flush();
 }
 
+static void draw_mine_screen(int countdown)
+{
+    char line[24];
+
+    display_clear();
+    display_text(2, 1, "MINE - DO NOT MOVE", true);
+    display_text(4, 20, "WAIT FOR TIMER", false);
+    snprintf(line, sizeof(line), "TIME: %02d SEC", countdown);
+    display_text(4, 36, line, false);
+    display_flush();
+}
+
 static void draw_dead_screen(void)
 {
     display_clear();
@@ -665,6 +685,14 @@ static void draw_bomb_difuse(void)
     display_clear();
     display_draw_rect(3, 3, 122, 58);
     display_text(28, 28, "BOMB DEFUSED", true);
+    display_flush();
+}
+
+static void draw_mine_avoided(void)
+{
+    display_clear();
+    display_draw_rect(3, 3, 122, 58);
+    display_text(34, 28, "MINE AVOIDED", true);
     display_flush();
 }
 
@@ -720,7 +748,7 @@ void app_main(void)
     }
     ESP_ERROR_CHECK( ret );
 
-    s_challenge_queue = xQueueCreate(ESPNOW_QUEUE_SIZE, sizeof(joystick_challenge_t));
+    s_challenge_queue = xQueueCreate(ESPNOW_QUEUE_SIZE, sizeof(game_item_t));
     ESP_ERROR_CHECK(s_challenge_queue == NULL ? ESP_ERR_NO_MEM : ESP_OK);
 
     wifi_init_from_espnow();
@@ -758,7 +786,7 @@ void app_main(void)
     int bomb_countdown = -1;
     TickType_t next_bomb_update = 0;
     TickType_t bomb_deadline = 0;
-    joystick_challenge_t active_challenge = {0};
+    game_item_t active_challenge = {0};
     bool board_dead = false;
     uint32_t latched_joystick = 0;
     TickType_t joystick_changed_at = xTaskGetTickCount();
@@ -779,8 +807,15 @@ void app_main(void)
                 joystick_changed_at = xTaskGetTickCount();
             }
             const bool key_pressed = ev.id >= BTN_KEY1 && ev.id <= BTN_KEY4;
+            const bool joystick_moved = ev.id <= BTN_RIGHT;
             if (ev.pressed && board_dead) {
                 ESP_LOGI(TAG, "Ignoring button press: board is dead");
+            } else if (ev.pressed && bomb_countdown >= 0 &&
+                       active_challenge.type == EXAMPLE_ESPNOW_ITEM_MINE &&
+                       (key_pressed || joystick_moved)) {
+                bomb_countdown = -2;
+                next_bomb_update = xTaskGetTickCount();
+                ESP_LOGW(TAG, "Mine exploded: input detected before the timer finished");
             } else if (ev.pressed && key_pressed && bomb_countdown >= 0) {
                 const uint8_t current_joystick = joystick_position(buttons_read() | latched_joystick);
                 if (ev.id == active_challenge.key && current_joystick == active_challenge.joystick) {
@@ -799,6 +834,7 @@ void app_main(void)
                 const example_espnow_event_t send_challenge = {
                     .id = EXAMPLE_ESPNOW_SEND_CHALLENGE,
                     .info.challenge = {
+                        .type = ev.id == BTN_KEY1 ? EXAMPLE_ESPNOW_ITEM_MINE : EXAMPLE_ESPNOW_ITEM_CHALLENGE,
                         .joystick = joystick_position(buttons_read() | latched_joystick),
                         .key = (uint8_t)ev.id,
                     },
@@ -813,14 +849,18 @@ void app_main(void)
             }
         }
 
-        joystick_challenge_t received_challenge;
+        game_item_t received_challenge;
         if (xQueueReceive(s_challenge_queue, &received_challenge, 0) == pdTRUE && !board_dead) {
             active_challenge = received_challenge;
             bomb_countdown = BOMB_RESPONSE_TIME_MS / 1000;
             const TickType_t now = xTaskGetTickCount();
             bomb_deadline = now + pdMS_TO_TICKS(BOMB_RESPONSE_TIME_MS);
-            ESP_LOGI(TAG, "Received joystick challenge: position 0x%02x, key %s",
-                     active_challenge.joystick, buttons_name((button_id_t)active_challenge.key));
+            if (active_challenge.type == EXAMPLE_ESPNOW_ITEM_MINE) {
+                ESP_LOGI(TAG, "Received mine. Any key or joystick movement before timeout will explode it");
+            } else {
+                ESP_LOGI(TAG, "Received joystick challenge: position 0x%02x, key %s",
+                         active_challenge.joystick, buttons_name((button_id_t)active_challenge.key));
+            }
         }
 
         int mic_level = audio_ok ? audio_mic_level() : 0;
@@ -828,8 +868,12 @@ void app_main(void)
         if (bomb_countdown == -3 && (int32_t)(now - next_bomb_update) >= 0) {
             bomb_countdown = -1;
         }
+        if (bomb_countdown == -4 && (int32_t)(now - next_bomb_update) >= 0) {
+            bomb_countdown = -1;
+        }
         if (bomb_countdown == -2 ||
-            (bomb_countdown >= 0 && (int32_t)(now - bomb_deadline) >= 0)) {
+            (bomb_countdown >= 0 && (int32_t)(now - bomb_deadline) >= 0 &&
+             active_challenge.type != EXAMPLE_ESPNOW_ITEM_MINE)) {
             board_dead = true;
             s_board_dead = true;
             bomb_countdown = -1;
@@ -837,15 +881,27 @@ void app_main(void)
                 draw_dead_screen();
             }
             send_game_over_event();
+        } else if (bomb_countdown >= 0 && (int32_t)(now - bomb_deadline) >= 0) {
+            bomb_countdown = -4;
+            next_bomb_update = now + pdMS_TO_TICKS(1500);
+            if (display_ok) {
+                draw_mine_avoided();
+            }
+            ESP_LOGI(TAG, "Mine timer completed safely");
         } else if (bomb_countdown >= 0) {
             const TickType_t ticks_per_second = pdMS_TO_TICKS(1000);
             const TickType_t remaining_ticks = bomb_deadline - now;
             bomb_countdown = (int)((remaining_ticks + ticks_per_second - 1) / ticks_per_second);
             if (display_ok) {
-                draw_challenge_screen(bomb_countdown, &active_challenge,
-                                      joystick_position(buttons_read() | latched_joystick));
+                if (active_challenge.type == EXAMPLE_ESPNOW_ITEM_MINE) {
+                    draw_mine_screen(bomb_countdown);
+                } else {
+                    draw_challenge_screen(bomb_countdown, &active_challenge,
+                                          joystick_position(buttons_read() | latched_joystick));
+                }
             }
-        } else if (bomb_countdown >= 0 || bomb_countdown == -2 || bomb_countdown == -3) {
+        } else if (bomb_countdown >= 0 || bomb_countdown == -2 ||
+                   bomb_countdown == -3 || bomb_countdown == -4) {
             continue;
         } else if (!board_dead && display_ok) {
             const bool diagonal_ready =

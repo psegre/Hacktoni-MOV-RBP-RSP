@@ -32,9 +32,15 @@ typedef enum {
 } example_espnow_event_id_t;
 
 typedef struct {
+    uint8_t type;
     uint8_t joystick;
     uint8_t key;
 } example_espnow_challenge_t;
+
+enum {
+    EXAMPLE_ESPNOW_ITEM_CHALLENGE,
+    EXAMPLE_ESPNOW_ITEM_MINE,
+};
 
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
