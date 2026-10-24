@@ -30,7 +30,7 @@
 #include "espnow_example.h"
 
 #define ESPNOW_MAXDELAY 512 //-> tiempo de respuesta network
-#define BOMB_RESPONSE_TIME_MS 15000 // Reduce this value to shorten the challenge during testing.
+#define BOMB_RESPONSE_TIME_MS 10000 // Reduce this value to shorten the challenge during testing.
 
 static const char *TAG = "demo-BOMBA"; //-> nombre del proj?
 
