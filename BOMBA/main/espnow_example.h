@@ -20,16 +20,21 @@
 #endif
 
 #define ESPNOW_QUEUE_SIZE           6
-#define ESPNOW_MESSAGE              "BOMB"
+
 
 #define IS_BROADCAST_ADDR(addr) (memcmp(addr, s_example_broadcast_mac, ESP_NOW_ETH_ALEN) == 0)
 
 typedef enum {
     EXAMPLE_ESPNOW_SEND_CB,
     EXAMPLE_ESPNOW_RECV_CB,
-    EXAMPLE_ESPNOW_SEND_REQUEST,
+    EXAMPLE_ESPNOW_SEND_CHALLENGE,
     EXAMPLE_ESPNOW_GAME_OVER,
 } example_espnow_event_id_t;
+
+typedef struct {
+    uint8_t joystick;
+    uint8_t key;
+} example_espnow_challenge_t;
 
 typedef struct {
     uint8_t mac_addr[ESP_NOW_ETH_ALEN];
@@ -45,6 +50,7 @@ typedef struct {
 typedef union {
     example_espnow_event_send_cb_t send_cb;
     example_espnow_event_recv_cb_t recv_cb;
+    example_espnow_challenge_t challenge;
 } example_espnow_event_info_t;
 
 /* Callback events and app send requests are handled by the ESP-NOW task. */
