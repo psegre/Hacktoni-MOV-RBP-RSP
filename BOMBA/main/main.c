@@ -701,7 +701,7 @@ static void draw_ui(uint32_t pressed, int mic_level, bool audio_ok, bool diagona
     char line[24];
 
     display_clear();
-    display_text(2, 1, "HACKATHON BOARD", true);
+    display_text(2, 1, "LANZA BOMBAS", true);
 
     display_text(0, 14, "MIC", false);
     display_draw_rect(22, 13, 82, 10);
