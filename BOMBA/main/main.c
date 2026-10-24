@@ -963,6 +963,11 @@ void app_main(void)
                     if (ui_mode == UI_MODE_NORMAL && held_ticks < pdMS_TO_TICKS(KEY4_HOLD_SELECT_MS)) {
                         ui_mode = UI_MODE_MENU;
                         menu_selection = 0;
+                    } else if (ui_mode == UI_MODE_MESSAGE &&
+                               held_ticks < pdMS_TO_TICKS(KEY4_HOLD_SELECT_MS)) {
+                        memset(message, 0, sizeof(message));
+                        message_length = 0;
+                        ui_mode = UI_MODE_MENU;
                     }
                     key4_held_for_menu = false;
                 }
