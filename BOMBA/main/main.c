@@ -592,10 +592,10 @@ static void draw_ui(uint32_t pressed, int mic_level, bool audio_ok)
         display_text(107, 14, "ERR", false);
     }
 
-    draw_key(15, 28, 10, pressed & (1u << BTN_UP));
-    draw_key(4, 39, 10, pressed & (1u << BTN_LEFT));
-    draw_key(26, 39, 10, pressed & (1u << BTN_RIGHT));
-    draw_key(15, 50, 10, pressed & (1u << BTN_DOWN));
+    draw_key(15, 28, 10, pressed & (1u << BTN_DOWN));
+    draw_key(4, 39, 10, pressed & (1u << BTN_RIGHT));
+    draw_key(26, 39, 10, pressed & (1u << BTN_LEFT));
+    draw_key(15, 50, 10, pressed & (1u << BTN_UP));
 
     display_text(50, 29, "KEYS", false);
     for (int i = 0; i < 4; i++) {
@@ -657,10 +657,15 @@ void app_main(void)
     int bomb_countdown = -1;
     TickType_t next_bomb_update = 0;
     bool board_dead = false;
+    uint32_t latched_joystick = 0;
     while (1) {
         button_event_t ev;
         if (xQueueReceive(events, &ev, pdMS_TO_TICKS(UI_PERIOD_MS)) == pdTRUE) {
             ESP_LOGI(TAG, "button %s %s", buttons_name(ev.id), ev.pressed ? "pressed" : "released");
+            if (ev.pressed && !board_dead && ev.id <= BTN_RIGHT) {
+                const uint32_t direction = 1u << ev.id;
+                latched_joystick = latched_joystick == direction ? 0 : direction;
+            }
             if (ev.pressed && board_dead) {
                 ESP_LOGI(TAG, "Ignoring button press: board is dead");
             } else if (ev.pressed && (bomb_countdown >= 0 || bomb_countdown == -2)) {
@@ -716,7 +721,7 @@ void app_main(void)
             } else if (bomb_countdown >= 0 || bomb_countdown == -2 || bomb_countdown == -3) {
                 continue;
             } else if (!board_dead) {
-                draw_ui(buttons_read(), mic_level, audio_ok);
+                draw_ui(buttons_read() | latched_joystick, mic_level, audio_ok);
                 display_flush();
             }
         }
